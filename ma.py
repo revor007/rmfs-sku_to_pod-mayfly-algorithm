@@ -215,20 +215,19 @@ def MA(problem, IterPrint, MaxIter, MaxFuncEvals, curtrial, initialpop, mPopSize
 
             male_child_base['velocity'] = np.zeros(shape, dtype=np.float32)
             female_child_base['velocity'] = np.zeros(shape, dtype=np.float32)
-            male_child_base['best_position'] = male_child_base['position'].copy()            
+            male_child_base['best_position'] = male_child_base['position'].copy()        
             
             male_child_base = evaluate_candidate(male_child_base)
             pop.append(male_child_base)
             if function_budget_reached():
                 break
+            
             female_child_base = evaluate_candidate(female_child_base)
             popf.append(female_child_base)
             if function_budget_reached():
                 break
 
-            male_child_adapt['best_cost'] = male_child_adapt['cost']
             male_child_base['best_cost'] = male_child_base['cost']
-
             if function_budget_reached():
                 break
         if function_budget_reached():
