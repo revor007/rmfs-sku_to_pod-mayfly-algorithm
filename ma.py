@@ -215,59 +215,19 @@ def MA(problem, IterPrint, MaxIter, MaxFuncEvals, curtrial, initialpop, mPopSize
 
             male_child_base['velocity'] = np.zeros(shape, dtype=np.float32)
             female_child_base['velocity'] = np.zeros(shape, dtype=np.float32)
-            male_child_base['best_position'] = male_child_base['position'].copy()
-
-            # Define the factor that divides the early and late stages of the algorithm, which controls the exploration and exploitation balance
-            progress = it / max(1, MaxIter)
-            o = np.exp(-((1 - progress) ** (1 / np.e)))
+            male_child_base['best_position'] = male_child_base['position'].copy()            
             
-            # If o < 1/2 (early stage), use Cauchy noise for more exploration; else (late stage), use Gaussian noise for more exploitation
-            if o < (1/2):
-                child_m, child_f = ContinuousCrossoverCauchy(male_child_base['position'], female_child_base['position'])
-            else:
-                child_m, child_f = ContinuousCrossoverGaussian(male_child_base['position'], female_child_base['position'], sigma=0.1)
-
-            male_child_adapt['position'] = np.asarray(child_m, dtype=np.float32)
-            female_child_adapt['position'] = np.asarray(child_f, dtype=np.float32)
-            np.clip(male_child_adapt['position'], VarMin, VarMax, out=male_child_adapt['position'])
-            np.clip(female_child_adapt['position'], VarMin, VarMax, out=female_child_adapt['position'])
-
-            male_child_adapt['quantity_num'] = np.zeros(shape, dtype=np.int32)
-            female_child_adapt['quantity_num'] = np.zeros(shape, dtype=np.int32)
-            male_child_adapt['compartment_num'] = np.zeros(shape, dtype=np.int32)
-            female_child_adapt['compartment_num'] = np.zeros(shape, dtype=np.int32)
-
-            male_child_adapt['velocity'] = np.zeros(shape, dtype=np.float32)
-            female_child_adapt['velocity'] = np.zeros(shape, dtype=np.float32)
-            male_child_adapt['best_position'] = male_child_adapt['position'].copy()
-            
-
-            male_child_adapt = evaluate_candidate(male_child_adapt)
-            if function_budget_reached():
-                break
-            female_child_adapt = evaluate_candidate(female_child_adapt)
-            if function_budget_reached():
-                break
             male_child_base = evaluate_candidate(male_child_base)
+            pop.append(male_child_base)
             if function_budget_reached():
                 break
             female_child_base = evaluate_candidate(female_child_base)
+            popf.append(female_child_base)
             if function_budget_reached():
                 break
 
             male_child_adapt['best_cost'] = male_child_adapt['cost']
             male_child_base['best_cost'] = male_child_base['cost']
-
-            # Greedy selection: only the better child (adapted or base) is added to the population, which helps maintain a balance between exploration and exploitation
-            if male_child_adapt['cost'] > male_child_base['cost']:
-                pop.append(male_child_adapt)
-            else:
-                pop.append(male_child_base)
-                
-            if female_child_adapt['cost'] > female_child_base['cost']:
-                popf.append(female_child_adapt)
-            else:
-                popf.append(female_child_base)
 
             if function_budget_reached():
                 break
