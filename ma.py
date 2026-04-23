@@ -10,7 +10,7 @@
 # Library imports
 import numpy as np
 import random
-from operators import ContinuousCrossover, ContinuousCrossoverCauchy, ContinuousCrossoverGaussian, ContinuousMutation as ContinousMutation
+from operators import ContinuousCrossover, ContinuousMutation
 from printingIter import printingperiter
 
 # %%
@@ -237,7 +237,7 @@ def MA(problem, IterPrint, MaxIter, MaxFuncEvals, curtrial, initialpop, mPopSize
         for _ in range(nmf):
             a = random.randint(0, fPopSize - 1)
             mutant = empty_female_particle()
-            mutant['position'] = np.asarray(ContinousMutation(popf[a]['position'], problem), dtype=np.float32)
+            mutant['position'] = np.asarray(ContinuousMutation(popf[a]['position'], problem), dtype=np.float32)
             np.clip(mutant['position'], VarMin, VarMax, out=mutant['position'])
             mutant['quantity_num'] = np.zeros(shape, dtype=np.int32)
             mutant['compartment_num'] = np.zeros(shape, dtype=np.int32)
