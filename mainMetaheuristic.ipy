@@ -16,7 +16,7 @@ print('[START] mainMetaheuristics running', flush=True)
 
 MaxFuncEvals = 15000
 MaxIter = 100
-trials= 10
+trials= 1
 IterPrint=10
 InitPopSize= 100
 mPopSize = 50
@@ -27,19 +27,98 @@ start_time_script = time.time()
 
 # %%
 # Load file
-from dataPreparation import load_data_rmfs
+from dataPreparation import load_data_rmfs, load_allocation_info
 
 base_dir = Path(__file__).resolve().parent
 path_U = base_dir / "association_matrix_normalized.csv"
 path_S = base_dir / "same_cluster_matrix.csv"
 path_min_inv = base_dir / "minimum_inventory.csv"
 path_max_cap = base_dir / "max_comp_number.csv"
+path_cluster = base_dir / "Clustering" / "mixed_cluster_results.csv"
 
 G_scalar = 40
 print('Reading data files', flush=True)
 U, S, sku_codes, G, g, p, lam, M = load_data_rmfs(
     path_U, path_S, path_min_inv, G_scalar, path_max_cap
 )
+allocation_type, is_new_association, pair_index = load_allocation_info(path_cluster, sku_codes)
+
+# Stage 1: random allocation reduces available slots per pod
+remaining_slots = G.copy().astype(np.int32)
+rng = np.random.default_rng(0)
+random_mask = allocation_type == 'random allocation'
+random_records = []
+for i in np.where(random_mask)[0]:
+    demand = int(max(0, g[i]))
+    if demand == 0:
+        continue
+    if p[i] <= 0:
+        raise ValueError("All p values must be positive.")
+
+    slots_needed = int(np.ceil(demand / p[i]))
+    eligible = np.where(remaining_slots >= slots_needed)[0]
+    if eligible.size > 0:
+        m = int(rng.choice(eligible))
+        remaining_slots[m] -= slots_needed
+        random_records.append({
+            'item_code': str(sku_codes[i]),
+            'pod': int(m + 1),
+            'slots_used': int(slots_needed),
+            'quantity_allocated': int(demand),
+            'mode': 'single_pod'
+        })
+    else:
+        pods = np.where(remaining_slots > 0)[0]
+        if pods.size == 0:
+            raise ValueError("No pod capacity left for random allocation.")
+        rng.shuffle(pods)
+        for m in pods:
+            if demand <= 0:
+                break
+            if remaining_slots[m] <= 0:
+                continue
+            max_qty = int(remaining_slots[m]) * int(p[i])
+            alloc_qty = min(demand, max_qty)
+            slots_used = int(np.ceil(alloc_qty / p[i]))
+            remaining_slots[m] -= slots_used
+            demand -= alloc_qty
+            random_records.append({
+                'item_code': str(sku_codes[i]),
+                'pod': int(m + 1),
+                'slots_used': int(slots_used),
+                'quantity_allocated': int(alloc_qty),
+                'mode': 'multi_pod'
+            })
+        if demand > 0:
+            raise ValueError("Insufficient capacity for random allocation.")
+
+if random_records:
+    os.makedirs(base_dir / 'results_fcgma', exist_ok=True)
+    random_df = pd.DataFrame(random_records)
+    random_df.to_csv(base_dir / 'results_fcgma' / 'random_allocation_stage.csv', index=False)
+common_mask = allocation_type != 'random allocation'
+if not np.any(common_mask):
+    raise ValueError("No common-allocation SKUs found for optimization.")
+
+old_indices = np.where(common_mask)[0]
+old_to_new = {int(old_idx): int(new_idx) for new_idx, old_idx in enumerate(old_indices)}
+
+U = U[np.ix_(common_mask, common_mask)]
+S = S[np.ix_(common_mask, common_mask)]
+g = g[common_mask]
+p = p[common_mask]
+sku_codes = [sku_codes[i] for i in old_indices]
+allocation_type = allocation_type[common_mask]
+is_new_association = is_new_association[common_mask]
+
+pair_index_filtered = np.full(len(sku_codes), -1, dtype=np.int32)
+for new_idx, old_idx in enumerate(old_indices):
+    old_pair = int(pair_index[old_idx])
+    if old_pair >= 0 and common_mask[old_pair]:
+        pair_index_filtered[new_idx] = old_to_new[old_pair]
+pair_index = pair_index_filtered
+
+G = remaining_slots
 PN = len(sku_codes)
 Dimensions = [PN, M]
 print(f'[LOAD] Done. PN={PN}, M={M}, sum(g)={np.sum(g)}, sum(G)={np.sum(G)}', flush=True)
@@ -51,6 +130,9 @@ from objective import RMFSproblem
 PN = len(sku_codes)
 problem = RMFSproblem(Dimensions, U, S, G, g, p, lam)
 problem['InitPopSize'] = InitPopSize
+problem['allocation_type'] = allocation_type
+problem['is_new_association'] = is_new_association
+problem['pair_index'] = pair_index
 print(f"[CONF] MaxFuncEvals={MaxFuncEvals}, MaxIter={MaxIter}, trials={trials}, InitPopSize={InitPopSize}", flush=True)
 
 # %%

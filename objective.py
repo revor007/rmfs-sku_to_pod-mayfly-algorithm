@@ -88,6 +88,9 @@ def repair_solution(pop, problem):
     remaining_slots = G.copy()
     feasible = True
 
+    is_new_association = np.asarray(problem.get('is_new_association', np.zeros(PN, dtype=bool)))
+    pair_index = np.asarray(problem.get('pair_index', np.full(PN, -1, dtype=np.int32)))
+
     # Fill each SKU's demand across already-selected pods only
     for i in range(PN):
         demand = int(max(0, g[i]))
@@ -98,7 +101,10 @@ def repair_solution(pop, problem):
             feasible = False
             continue
 
-        selected = np.where(X[i, :] == 1)[0]
+        if is_new_association[i] and pair_index[i] >= 0:
+            selected = np.where(X[pair_index[i], :] == 1)[0]
+        else:
+            selected = np.where(X[i, :] == 1)[0]
         if selected.size == 0:
             feasible = False
             continue
@@ -163,8 +169,8 @@ def RMFSproblem(Dimensions, U, S, G, g, p, lam):
     g = np.asarray(g, dtype=np.float32)
     p = np.asarray(p, dtype=np.float32)
 
-    # Build reward
-    W = (1.00 - lam) * U + lam * S
+    # Build reward using association only
+    W = U
 
     # Enforce symmetry and zero diagonal
     W = 0.5 * (W + W.T)
