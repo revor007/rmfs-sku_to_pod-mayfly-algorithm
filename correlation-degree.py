@@ -5,24 +5,15 @@ import numpy as np
 import pandas as pd
 from scipy.sparse import coo_matrix
 
+from sku_alignment import (
+    find_order_data_path,
+    find_preprocessing_dir,
+    load_aligned_sku_set,
+    normalize_item_code,
+)
 
 BASE_DIR = Path(__file__).resolve().parent
-
-
-def find_preprocessing_dir():
-    candidates = [
-        BASE_DIR / "Preprocessing",
-        BASE_DIR.parent / "Preprocessing",
-        BASE_DIR.parent.parent / "Preprocessing",
-    ]
-    for candidate in candidates:
-        if candidate.exists():
-            return candidate
-
-    raise FileNotFoundError("Could not locate the 'Preprocessing' directory.")
-
-
-PREPROCESSING_DIR = find_preprocessing_dir()
+PREPROCESSING_DIR = find_preprocessing_dir(BASE_DIR)
 
 JACCARD_OUTPUT_PATH = BASE_DIR / "jaccard_similarity_matrix.csv"
 LEGACY_OUTPUT_PATH = BASE_DIR / "association_matrix_normalized.csv"
@@ -38,22 +29,6 @@ SKU_CANDIDATES = [
     "\u5546\u54c1\u7f16\u7801",
     "item_code",
 ]
-
-
-def find_order_data_path():
-    candidates = sorted(
-        path
-        for path in PREPROCESSING_DIR.glob("*_final.csv")
-        if path.name != "preprocessed_final.csv"
-    )
-    if not candidates:
-        raise FileNotFoundError(
-            f"No order data file ending with '_final.csv' was found in {PREPROCESSING_DIR}."
-        )
-
-    return candidates[0]
-
-
 def find_column(columns, candidates):
     normalized = {str(col).strip(): col for col in columns}
     for candidate in candidates:
@@ -69,7 +44,7 @@ def find_column(columns, candidates):
 def build_jaccard_matrix(df_order, order_col, sku_col):
     pairs = df_order[[order_col, sku_col]].dropna().copy()
     pairs[order_col] = pairs[order_col].astype(str).str.strip()
-    pairs[sku_col] = pairs[sku_col].astype(str).str.strip()
+    pairs[sku_col] = pairs[sku_col].map(normalize_item_code)
     pairs = pairs[(pairs[order_col] != "") & (pairs[sku_col] != "")]
     pairs = pairs.drop_duplicates(subset=[order_col, sku_col])
 
@@ -220,11 +195,14 @@ def save_dataframe(df, path, **kwargs):
 
 
 def main():
-    path_order = find_order_data_path()
+    path_order = find_order_data_path(PREPROCESSING_DIR)
     df_order = pd.read_csv(path_order, sep=";", encoding="utf-8-sig", decimal=",")
 
     order_col = find_column(df_order.columns, ORDER_ID_CANDIDATES)
     sku_col = find_column(df_order.columns, SKU_CANDIDATES)
+    aligned_skus = load_aligned_sku_set(BASE_DIR)
+    df_order[sku_col] = df_order[sku_col].map(normalize_item_code)
+    df_order = df_order[df_order[sku_col].isin(aligned_skus)].copy()
 
     pairs, co_occurrence_matrix, jaccard_matrix = build_jaccard_matrix(
         df_order=df_order,
@@ -269,6 +247,7 @@ def main():
 
     safe_path_order = str(path_order).encode("unicode_escape").decode("ascii")
     print(f"Order data: {safe_path_order}")
+    print(f"Aligned SKU universe: {len(aligned_skus):,}")
     print(f"Unique order-SKU pairs: {len(pairs):,}")
     print(f"Number of orders: {pairs[order_col].nunique():,}")
     print(f"Number of SKUs: {pairs[sku_col].nunique():,}")

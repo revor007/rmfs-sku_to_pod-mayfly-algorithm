@@ -3,6 +3,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from sku_alignment import load_aligned_sku_set, normalize_item_code
+
 
 BASE_DIR = Path(__file__).resolve().parent
 TIME_SERIES_CLUSTER_INPUT_PATH = BASE_DIR / "Clustering" / "time-series-clustering-results.csv"
@@ -42,9 +44,9 @@ def main():
         .copy()
         .rename(columns={sku_col: "item_code"})
     )
-    cluster_assignments["item_code"] = (
-        cluster_assignments["item_code"].astype(str).str.replace(r"\.0$", "", regex=True).str.strip()
-    )
+    cluster_assignments["item_code"] = cluster_assignments["item_code"].map(normalize_item_code)
+    aligned_skus = load_aligned_sku_set(BASE_DIR)
+    cluster_assignments = cluster_assignments[cluster_assignments["item_code"].isin(aligned_skus)].copy()
     cluster_assignments = cluster_assignments.drop_duplicates(subset=["item_code"]).sort_values("item_code")
 
     labels = cluster_assignments["cluster"].to_numpy()
@@ -67,6 +69,7 @@ def main():
         f"Same-cluster matrix saved to: "
         f"{str(SAME_CLUSTER_MATRIX_OUTPUT_PATH).encode('unicode_escape').decode('ascii')}"
     )
+    print(f"Aligned SKU universe: {len(aligned_skus):,}")
     print(f"SKUs covered: {len(cluster_assignments):,}")
 
 

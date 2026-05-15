@@ -3,6 +3,12 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from sku_alignment import (
+    find_order_data_path,
+    find_preprocessing_dir,
+    load_aligned_sku_set,
+    normalize_item_code,
+)
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -36,35 +42,6 @@ CREATED_TIME_CANDIDATES = [
     "创建时间",
     "created_at",
 ]
-
-
-def find_preprocessing_dir():
-    candidates = [
-        BASE_DIR / "Preprocessing",
-        BASE_DIR.parent / "Preprocessing",
-        BASE_DIR.parent.parent / "Preprocessing",
-    ]
-    for candidate in candidates:
-        if candidate.exists():
-            return candidate
-
-    raise FileNotFoundError("Could not locate the 'Preprocessing' directory.")
-
-
-def find_order_data_path(preprocessing_dir):
-    candidates = sorted(
-        path
-        for path in preprocessing_dir.glob("*_final.csv")
-        if path.name != "preprocessed_final.csv"
-    )
-    if not candidates:
-        raise FileNotFoundError(
-            f"No order data file ending with '_final.csv' was found in {preprocessing_dir}."
-        )
-
-    return candidates[0]
-
-
 def normalize_column_name(name):
     return str(name).replace("\ufeff", "").strip()
 
@@ -121,7 +98,7 @@ def load_order_data(path):
     }
 
     df[columns["order_id"]] = df[columns["order_id"]].astype(str).str.strip()
-    df[columns["sku"]] = df[columns["sku"]].astype(str).str.strip()
+    df[columns["sku"]] = df[columns["sku"]].map(normalize_item_code)
     df[columns["product_name"]] = df[columns["product_name"]].astype(str).str.strip()
     df[columns["quantity"]] = pd.to_numeric(df[columns["quantity"]], errors="coerce")
     if df[columns["quantity"]].isna().any():
@@ -423,9 +400,11 @@ def build_inventory_outputs(series_by_sku):
 
 
 def main():
-    preprocessing_dir = find_preprocessing_dir()
+    preprocessing_dir = find_preprocessing_dir(BASE_DIR)
     source_path = find_order_data_path(preprocessing_dir)
     df_order, columns = load_order_data(source_path)
+    aligned_skus = load_aligned_sku_set(BASE_DIR)
+    df_order = df_order[df_order[columns["sku"]].isin(aligned_skus)].copy()
     series_by_sku = build_daily_demand_series(df_order, columns)
     minimum_inventory_df, evaluation_df = build_inventory_outputs(series_by_sku)
 
@@ -447,6 +426,7 @@ def main():
     )
     print("- minimum_inventory is mapped directly to the reorder point (ROP).")
     print(f"Source file: {make_console_safe(source_path)}")
+    print(f"Aligned SKU universe: {len(aligned_skus)}")
     print(f"Minimum inventory output saved to: {make_console_safe(minimum_inventory_path)}")
     print(f"Evaluation output saved to: {make_console_safe(evaluation_path)}")
     print(f"SKUs processed: {len(minimum_inventory_df)}")

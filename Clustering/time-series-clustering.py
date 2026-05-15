@@ -1,4 +1,5 @@
 from pathlib import Path
+import sys
 
 import numpy as np
 import pandas as pd
@@ -8,28 +9,22 @@ from sklearn.metrics import silhouette_score
 
 BASE_DIR = Path(__file__).resolve().parent
 ROOT_DIR = BASE_DIR.parent
-PREPROCESSING_DIR = ROOT_DIR.parent / "Preprocessing"
+if str(ROOT_DIR) not in sys.path:
+    sys.path.append(str(ROOT_DIR))
+
+from sku_alignment import (
+    find_order_data_path,
+    find_preprocessing_dir,
+    load_aligned_sku_set,
+    normalize_item_code,
+)
+
+PREPROCESSING_DIR = find_preprocessing_dir(ROOT_DIR)
 OUTPUT_PATH = BASE_DIR / "time-series-clustering-results.csv"
 
 SKU_CANDIDATES = ["\u5546\u54c1\u7f16\u7801", "item_code"]
 QUANTITY_CANDIDATES = ["\u5546\u54c1\u6570\u91cf", "quantity"]
 CREATED_TIME_CANDIDATES = ["\u521b\u5efa\u65f6\u95f4", "created_at"]
-
-
-def find_order_data_path():
-    candidates = sorted(
-        path
-        for path in PREPROCESSING_DIR.glob("*_final.csv")
-        if path.name != "preprocessed_final.csv"
-    )
-    if not candidates:
-        raise FileNotFoundError(
-            f"No order data file ending with '_final.csv' was found in {PREPROCESSING_DIR}."
-        )
-
-    return candidates[0]
-
-
 def normalize_column_name(name):
     return str(name).replace("\ufeff", "").strip()
 
@@ -102,15 +97,17 @@ def select_best_cluster_count(values):
 
 
 def main():
-    order_path = find_order_data_path()
+    order_path = find_order_data_path(PREPROCESSING_DIR)
     df_order = pd.read_csv(order_path, sep=";", encoding="utf-8-sig", decimal=",")
 
     sku_col = find_column(df_order.columns, SKU_CANDIDATES)
     quantity_col = find_column(df_order.columns, QUANTITY_CANDIDATES)
     created_col = find_column(df_order.columns, CREATED_TIME_CANDIDATES)
+    aligned_skus = load_aligned_sku_set(ROOT_DIR)
 
     df_cluster = df_order[[sku_col, quantity_col, created_col]].copy()
-    df_cluster[sku_col] = df_cluster[sku_col].astype(str).str.replace(r"\.0$", "", regex=True).str.strip()
+    df_cluster[sku_col] = df_cluster[sku_col].map(normalize_item_code)
+    df_cluster = df_cluster[df_cluster[sku_col].isin(aligned_skus)].copy()
     df_cluster[quantity_col] = pd.to_numeric(df_cluster[quantity_col], errors="coerce").fillna(0.0)
     df_cluster[created_col] = pd.to_datetime(
         df_cluster[created_col],
@@ -157,6 +154,7 @@ def main():
         f"{str(OUTPUT_PATH).encode('unicode_escape').decode('ascii')}"
     )
     print(f"Order source: {str(order_path).encode('unicode_escape').decode('ascii')}")
+    print(f"Aligned SKU universe: {len(aligned_skus):,}")
     print(f"SKUs clustered: {len(cluster_labels):,}")
     print(f"Selected number of clusters: {best_k}")
 

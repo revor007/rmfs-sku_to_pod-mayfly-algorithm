@@ -1,4 +1,5 @@
 from pathlib import Path
+import sys
 
 import numpy as np
 import pandas as pd
@@ -9,34 +10,23 @@ from sklearn.preprocessing import StandardScaler
 
 BASE_DIR = Path(__file__).resolve().parent
 ROOT_DIR = BASE_DIR.parent
-PREPROCESSING_DIR = ROOT_DIR.parent / "Preprocessing"
+if str(ROOT_DIR) not in sys.path:
+    sys.path.append(str(ROOT_DIR))
+
+from sku_alignment import (
+    find_order_data_path,
+    find_preprocessing_dir,
+    find_product_data_path,
+    load_aligned_sku_set,
+    normalize_item_code,
+)
+
+PREPROCESSING_DIR = find_preprocessing_dir(ROOT_DIR)
 DATASET_OUTPUT_DIR = BASE_DIR / "dataset"
 RESULTS_OUTPUT_PATH = BASE_DIR / "bc-k-means-results.csv"
 
 ORDER_SKU_CANDIDATES = ["\u5546\u54c1\u7f16\u7801", "item_code"]
 MAX_CLUSTER_SIZE = 2
-
-
-def find_product_data_path():
-    path = PREPROCESSING_DIR / "preprocessed_final.csv"
-    if not path.exists():
-        raise FileNotFoundError(f"Could not find metadata file: {path}")
-    return path
-
-
-def find_order_data_path():
-    candidates = sorted(
-        path
-        for path in PREPROCESSING_DIR.glob("*_final.csv")
-        if path.name != "preprocessed_final.csv"
-    )
-    if not candidates:
-        raise FileNotFoundError(
-            f"No order data file ending with '_final.csv' was found in {PREPROCESSING_DIR}."
-        )
-    return candidates[0]
-
-
 def normalize_column_name(name):
     return str(name).replace("\ufeff", "").strip()
 
@@ -51,12 +41,6 @@ def find_column(columns, candidates):
         f"Could not find any of the expected columns {candidates}. "
         f"Available columns: {list(columns)}"
     )
-
-
-def normalize_item_code(series):
-    return series.astype(str).str.replace(r"\.0$", "", regex=True).str.strip()
-
-
 def build_feature_frame(df_product):
     df = df_product.copy()
 
@@ -163,15 +147,22 @@ def run_bc_kmeans_for_product(df_product, new_product_code):
 
 
 def main():
-    product_path = find_product_data_path()
-    order_path = find_order_data_path()
+    product_path = find_product_data_path(PREPROCESSING_DIR)
+    order_path = find_order_data_path(PREPROCESSING_DIR)
 
     df_product = pd.read_csv(product_path, sep=";", encoding="utf-8-sig", decimal=",")
     df_order = pd.read_csv(order_path, sep=";", encoding="utf-8-sig", decimal=",")
 
     sku_col = find_column(df_order.columns, ORDER_SKU_CANDIDATES)
-    df_product["item_code"] = normalize_item_code(df_product["item_code"])
-    df_order[sku_col] = normalize_item_code(df_order[sku_col])
+    aligned_skus = load_aligned_sku_set(ROOT_DIR)
+    df_product["item_code"] = df_product["item_code"].map(normalize_item_code)
+    df_product = (
+        df_product[df_product["item_code"].isin(aligned_skus)]
+        .drop_duplicates(subset=["item_code"], keep="first")
+        .copy()
+    )
+    df_order[sku_col] = df_order[sku_col].map(normalize_item_code)
+    df_order = df_order[df_order[sku_col].isin(aligned_skus)].copy()
 
     product_counts = df_order[sku_col].value_counts()
     new_products = set(product_counts[product_counts <= 1].index)
@@ -222,6 +213,7 @@ def main():
         f"BC-K-means results saved to: "
         f"{str(RESULTS_OUTPUT_PATH).encode('unicode_escape').decode('ascii')}"
     )
+    print(f"Aligned SKU universe: {len(aligned_skus):,}")
     print(f"New SKUs processed: {len(results_df):,}")
 
 

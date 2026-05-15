@@ -3,6 +3,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from sku_alignment import load_aligned_sku_set
+
 
 def normalize_sku_code(value):
     if pd.isna(value):
@@ -258,37 +260,45 @@ def load_data(
     U_df = pd.read_csv(path_u, sep=";", decimal=",", engine="python", index_col=0)
     S_df = pd.read_csv(path_s, sep=";", decimal=",", engine="python", index_col=0)
 
-    U_df.index = U_df.index.astype(str).str.strip()
-    U_df.columns = U_df.columns.astype(str).str.strip()
-    S_df.index = S_df.index.astype(str).str.strip()
-    S_df.columns = S_df.columns.astype(str).str.strip()
+    U_df.index = U_df.index.map(normalize_sku_code)
+    U_df.columns = U_df.columns.map(normalize_sku_code)
+    S_df.index = S_df.index.map(normalize_sku_code)
+    S_df.columns = S_df.columns.map(normalize_sku_code)
 
     g_df = pd.read_csv(path_min_inv, sep=";", decimal=",", engine="python")
     if "item_code" in g_df.columns:
-        g_df["item_code"] = g_df["item_code"].astype(str).str.strip()
+        g_df["item_code"] = g_df["item_code"].map(normalize_sku_code)
         g_df = g_df.set_index("item_code")
     else:
         g_df = g_df.set_index(g_df.columns[0])
-        g_df.index = g_df.index.astype(str).str.strip()
+        g_df.index = g_df.index.map(normalize_sku_code)
 
     if "minimum_inventory" not in g_df.columns:
         raise KeyError("Column 'minimum_inventory' was not found in minimum inventory file.")
 
     p_df = pd.read_csv(path_max_cap, sep=None, engine="python")
     if "item_code" in p_df.columns:
-        p_df["item_code"] = p_df["item_code"].astype(str).str.strip()
+        p_df["item_code"] = p_df["item_code"].map(normalize_sku_code)
         p_df = p_df.set_index("item_code")
     else:
         p_df = p_df.set_index(p_df.columns[0])
-        p_df.index = p_df.index.astype(str).str.strip()
+        p_df.index = p_df.index.map(normalize_sku_code)
 
     if "max_comp_number" not in p_df.columns:
         raise KeyError("Column 'max_comp_number' was not found in max capacity file.")
 
-    common_skus = sorted(set(U_df.index) & set(S_df.index) & set(g_df.index) & set(p_df.index))
+    aligned_skus = load_aligned_sku_set(Path(path_u).resolve().parent)
+    common_skus = sorted(
+        set(U_df.index)
+        & set(S_df.index)
+        & set(g_df.index)
+        & set(p_df.index)
+        & aligned_skus
+    )
     if not common_skus:
         raise ValueError(
-            "No common SKUs were found across U, S, minimum inventory, and max capacity files."
+            "No common SKUs were found across U, S, minimum inventory, max capacity, "
+            "and the aligned order/metadata SKU universe."
         )
 
     U_df = U_df.reindex(index=common_skus, columns=common_skus)
