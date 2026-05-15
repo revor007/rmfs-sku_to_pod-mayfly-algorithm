@@ -16,7 +16,7 @@ print('[START] mainMetaheuristics running', flush=True)
 
 MaxFuncEvals = 15000
 MaxIter = 100
-trials= 1
+trials= 10
 IterPrint=10
 InitPopSize= 100
 mPopSize = 50
