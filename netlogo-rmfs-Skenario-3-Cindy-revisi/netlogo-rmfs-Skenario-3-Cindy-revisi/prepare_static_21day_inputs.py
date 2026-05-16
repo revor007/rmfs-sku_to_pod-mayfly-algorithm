@@ -417,10 +417,6 @@ def prepare_inputs(
 def main():
     script_dir = Path(__file__).resolve().parent
     workspace_dir = script_dir.parents[1]
-<<<<<<< HEAD
-    fcgma_dir = workspace_dir
-    preprocessing_dir = workspace_dir / "Preprocessing"
-=======
     fcgma_dir = find_existing_directory(
         [
             workspace_dir,
@@ -439,7 +435,6 @@ def main():
         ],
         required_files=["preprocessed_final.csv"],
     )
->>>>>>> c39dc8b998aac0188a1857e80c413d4e74344065
 
     parser = argparse.ArgumentParser(
         description="Convert a frozen FCGMA allocation into RMFS Scenario 3 inputs for the static 21-day experiment."
