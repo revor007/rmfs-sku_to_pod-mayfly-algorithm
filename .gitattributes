@@ -1,3 +1,2 @@
-jaccard_similarity_matrix.csv filter=lfs diff=lfs merge=lfs -text
 Clustering/same_cluster_matrix.csv filter=lfs diff=lfs merge=lfs -text
 association_matrix_normalized.csv filter=lfs diff=lfs merge=lfs -text
