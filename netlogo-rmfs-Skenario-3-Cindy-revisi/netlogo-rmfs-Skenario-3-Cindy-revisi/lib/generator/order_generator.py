@@ -102,10 +102,16 @@ def generate_orders_from_actual_data():
     if missing_mask.any():
         missing_codes = sorted(raw_orders.loc[missing_mask, sku_col].astype(str).unique().tolist())
         sample = ", ".join(missing_codes[:10])
-        raise ValueError(
-            f"{len(missing_codes)} ordered SKUs were not found in RMFS items.csv. "
-            f"Sample missing codes: {sample}"
+        dropped_lines = int(missing_mask.sum())
+        raw_orders = raw_orders.loc[~missing_mask].copy()
+        print(
+            f"Skipping {dropped_lines:,} order lines across {len(missing_codes):,} SKUs "
+            f"that are not present in RMFS items.csv. Sample missing codes: {sample}"
         )
+        if raw_orders.empty:
+            raise ValueError(
+                "No actual order lines remain after filtering to SKUs present in RMFS items.csv."
+            )
 
     order_code_map = {
         original_order_id: idx
