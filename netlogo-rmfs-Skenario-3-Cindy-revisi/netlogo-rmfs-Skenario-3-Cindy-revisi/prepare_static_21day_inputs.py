@@ -393,7 +393,7 @@ def prepare_inputs(
 def main():
     script_dir = Path(__file__).resolve().parent
     workspace_dir = script_dir.parents[1]
-    fcgma_dir = workspace_dir / "revision-fcgma - Copy" / "rmfs-sku-allocation"
+    fcgma_dir = workspace_dir
     preprocessing_dir = workspace_dir / "Preprocessing"
 
     parser = argparse.ArgumentParser(
