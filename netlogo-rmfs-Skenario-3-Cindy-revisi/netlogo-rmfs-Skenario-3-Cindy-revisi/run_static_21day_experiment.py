@@ -8,18 +8,26 @@ import pandas as pd
 from prepare_static_21day_inputs import find_existing_directory, prepare_inputs
 
 
-def run_experiment(sim, max_ticks: int) -> tuple[pd.DataFrame, pd.DataFrame]:
+def run_experiment(
+    sim,
+    max_ticks: int,
+    record_every: int,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     setup_result = sim.setup()
     if isinstance(setup_result, str) and "error" in setup_result.lower():
         raise RuntimeError(setup_result)
 
+    if record_every <= 0:
+        raise ValueError("record_every must be a positive integer.")
+
     records = []
+    last_recorded_tick = None
     for _ in range(max_ticks):
         tick_result = sim.tick()
         if tick_result == "STOP":
             break
 
-        if isinstance(tick_result, list):
+        if isinstance(tick_result, list) and sim.warehouse._tick % record_every == 0:
             records.append(
                 {
                     "tick": int(sim.warehouse._tick),
@@ -39,6 +47,7 @@ def run_experiment(sim, max_ticks: int) -> tuple[pd.DataFrame, pd.DataFrame]:
                     "fixed_energy_per_order": tick_result[14],
                 }
             )
+            last_recorded_tick = int(sim.warehouse._tick)
     else:
         raise RuntimeError(
             f"Simulation did not stop within {max_ticks} ticks. Increase --max-ticks or inspect the replay state."
@@ -53,6 +62,8 @@ def run_experiment(sim, max_ticks: int) -> tuple[pd.DataFrame, pd.DataFrame]:
     summary = pd.DataFrame(
         [
             {"metric": "ticks_elapsed", "value": int(warehouse._tick)},
+            {"metric": "record_every_ticks", "value": int(record_every)},
+            {"metric": "last_recorded_tick", "value": int(last_recorded_tick or 0)},
             {"metric": "orders_expected", "value": int(getattr(warehouse, "total_orders_expected", 0))},
             {"metric": "orders_fulfilled", "value": int(warehouse.orders_fulfilled)},
             {
@@ -168,6 +179,12 @@ def main():
         default=250000,
         help="Safety cap for the simulation loop.",
     )
+    parser.add_argument(
+        "--record-every",
+        type=int,
+        default=10,
+        help="Record tick-level metrics every N ticks to reduce logging overhead.",
+    )
     args = parser.parse_args()
 
     if args.prepare:
@@ -182,7 +199,11 @@ def main():
 
     import netlogo as sim
 
-    metrics_df, summary_df = run_experiment(sim=sim, max_ticks=args.max_ticks)
+    metrics_df, summary_df = run_experiment(
+        sim=sim,
+        max_ticks=args.max_ticks,
+        record_every=args.record_every,
+    )
 
     tick_metrics_path = output_dir / "static_21day_tick_metrics.csv"
     summary_path = output_dir / "static_21day_summary.csv"
