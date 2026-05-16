@@ -55,6 +55,18 @@ def load_semicolon_csv(path: Path) -> pd.DataFrame:
     return pd.read_csv(path, sep=";", decimal=",", encoding="utf-8-sig", engine="python")
 
 
+def find_existing_directory(candidates: list[Path], required_files: list[str]) -> Path:
+    for candidate in candidates:
+        if candidate.exists() and all((candidate / filename).exists() for filename in required_files):
+            return candidate
+
+    searched = ", ".join(str(path) for path in candidates)
+    required = ", ".join(required_files)
+    raise FileNotFoundError(
+        f"Could not locate a directory containing {required}. Searched: {searched}"
+    )
+
+
 def assign_abc_classes(order_frequency: pd.Series) -> pd.Series:
     if order_frequency.empty or float(order_frequency.sum()) <= 0:
         return pd.Series("C", index=order_frequency.index, dtype=object)
@@ -192,16 +204,24 @@ def prepare_inputs(
         & (allocation["qty"] > 0)
     ].copy()
 
-    ordered_skus = set(orders["item_code"].unique())
+    raw_ordered_skus = set(orders["item_code"].unique())
+    metadata_skus = set(metadata["item_code"].dropna().astype(str))
+    translated_skus = set(translated["item_code"].dropna().astype(str))
+    max_comp_skus = set(max_comp["item_code"].dropna().astype(str))
+    eligible_ordered_skus = (
+        raw_ordered_skus & metadata_skus & translated_skus & max_comp_skus
+    )
+    excluded_order_skus = sorted(raw_ordered_skus - eligible_ordered_skus)
     allocated_skus = set(allocation["item_code"].unique())
-    missing_allocation = sorted(ordered_skus - allocated_skus)
+    missing_allocation = sorted(eligible_ordered_skus - allocated_skus)
     if missing_allocation:
         preview = ", ".join(missing_allocation[:10])
         raise ValueError(
-            "The frozen allocation does not cover the full 21-day order horizon. "
-            f"Missing {len(missing_allocation)} ordered SKUs, for example: {preview}. "
-            "Rerun the FCGMA optimization with the updated 21-day inputs first."
+            "The frozen allocation does not cover the eligible 21-day order horizon used by FCGMA. "
+            f"Missing {len(missing_allocation)} eligible ordered SKUs, for example: {preview}. "
+            "Rerun the FCGMA optimization with the updated aligned/capacity-feasible inputs first."
         )
+    orders = orders[orders["item_code"].isin(eligible_ordered_skus)].copy()
 
     generated_pod_path = output_dir / "generated_pod.csv"
     physical_pod_count = count_physical_pods(generated_pod_path)
@@ -365,7 +385,9 @@ def prepare_inputs(
 
     summary = pd.DataFrame(
         [
-            {"metric": "ordered_skus", "value": len(ordered_skus)},
+            {"metric": "ordered_skus_raw", "value": len(raw_ordered_skus)},
+            {"metric": "ordered_skus_eligible", "value": len(eligible_ordered_skus)},
+            {"metric": "ordered_skus_excluded_upstream", "value": len(excluded_order_skus)},
             {"metric": "allocated_skus", "value": len(allocated_skus)},
             {"metric": "order_lines", "value": len(orders)},
             {"metric": "unique_orders", "value": int(orders["order_id"].nunique())},
@@ -387,14 +409,37 @@ def prepare_inputs(
         "pods_used": int(pods_output["pod_id"].nunique()),
         "occupied_slots": int(len(pods_output)),
         "allocated_skus": int(len(allocated_skus)),
+        "eligible_ordered_skus": int(len(eligible_ordered_skus)),
+        "excluded_ordered_skus": int(len(excluded_order_skus)),
     }
 
 
 def main():
     script_dir = Path(__file__).resolve().parent
     workspace_dir = script_dir.parents[1]
+<<<<<<< HEAD
     fcgma_dir = workspace_dir
     preprocessing_dir = workspace_dir / "Preprocessing"
+=======
+    fcgma_dir = find_existing_directory(
+        [
+            workspace_dir,
+            workspace_dir / "fcgma",
+            workspace_dir / "revision-fcgma - Copy" / "rmfs-sku-allocation",
+            workspace_dir.parent / "fcgma",
+            workspace_dir.parent / "revision-fcgma - Copy" / "rmfs-sku-allocation",
+        ],
+        required_files=["max_comp_number.csv"],
+    )
+    preprocessing_dir = find_existing_directory(
+        [
+            fcgma_dir / "Preprocessing",
+            workspace_dir / "Preprocessing",
+            workspace_dir.parent / "Preprocessing",
+        ],
+        required_files=["preprocessed_final.csv"],
+    )
+>>>>>>> c39dc8b998aac0188a1857e80c413d4e74344065
 
     parser = argparse.ArgumentParser(
         description="Convert a frozen FCGMA allocation into RMFS Scenario 3 inputs for the static 21-day experiment."
@@ -445,7 +490,10 @@ def main():
     print(f"Live items.csv:   {result['items_live_path']}")
     print(f"Live pods.csv:    {result['pods_live_path']}")
     print(
-        f"Coverage: {result['allocated_skus']} SKUs, {result['pods_used']} pods used, "
+        f"Coverage: {result['allocated_skus']} allocated SKUs, "
+        f"{result['eligible_ordered_skus']} eligible ordered SKUs, "
+        f"{result['excluded_ordered_skus']} raw ordered SKUs excluded upstream, "
+        f"{result['pods_used']} pods used, "
         f"{result['occupied_slots']} occupied slots"
     )
 

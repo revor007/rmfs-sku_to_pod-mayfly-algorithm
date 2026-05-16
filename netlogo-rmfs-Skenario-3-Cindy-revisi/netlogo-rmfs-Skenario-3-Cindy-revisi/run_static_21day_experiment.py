@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from prepare_static_21day_inputs import prepare_inputs
+from prepare_static_21day_inputs import find_existing_directory, prepare_inputs
 
 
 def run_experiment(sim, max_ticks: int) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -103,8 +103,24 @@ def run_experiment(sim, max_ticks: int) -> tuple[pd.DataFrame, pd.DataFrame]:
 def main():
     script_dir = Path(__file__).resolve().parent
     workspace_dir = script_dir.parents[1]
-    fcgma_dir = workspace_dir / "revision-fcgma - Copy" / "rmfs-sku-allocation"
-    preprocessing_dir = workspace_dir / "Preprocessing"
+    fcgma_dir = find_existing_directory(
+        [
+            workspace_dir,
+            workspace_dir / "fcgma",
+            workspace_dir / "revision-fcgma - Copy" / "rmfs-sku-allocation",
+            workspace_dir.parent / "fcgma",
+            workspace_dir.parent / "revision-fcgma - Copy" / "rmfs-sku-allocation",
+        ],
+        required_files=["max_comp_number.csv"],
+    )
+    preprocessing_dir = find_existing_directory(
+        [
+            fcgma_dir / "Preprocessing",
+            workspace_dir / "Preprocessing",
+            workspace_dir.parent / "Preprocessing",
+        ],
+        required_files=["preprocessed_final.csv"],
+    )
     output_dir = script_dir / "data" / "output"
     output_dir.mkdir(parents=True, exist_ok=True)
 
